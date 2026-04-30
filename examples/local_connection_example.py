@@ -23,11 +23,14 @@ This example shows how to:
 
 To run:
   bazel run //examples:local_connection
+
+Tip: Pass --alsologtostderr to see execution steps in detail.
 """
 
 import asyncio
 from collections.abc import Sequence
 import os
+import sys
 
 from absl import app
 from absl import flags
@@ -143,6 +146,7 @@ async def run():
           break
 
   except Exception as e:  # pylint: disable=broad-exception-caught
+    print(f"An error occurred: {e}", file=sys.stderr)
     logging.exception("Error running example: %s", e)
   finally:
     if mcp_bridge is not None:
