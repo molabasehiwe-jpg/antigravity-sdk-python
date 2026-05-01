@@ -22,6 +22,7 @@ from absl.testing import absltest
 from google.genai import types
 import pydantic
 
+from google.antigravity import types as sdk_types
 from google.antigravity.tools import image_generation
 
 
@@ -164,6 +165,31 @@ class ImageGenerationToolTest(unittest.IsolatedAsyncioTestCase):
         RuntimeError, "Failed to generate image: Unexpected failure"
     ):
       await self.tool(prompt="A cat")
+
+
+class ImageGenerationToolModelEntryTest(unittest.IsolatedAsyncioTestCase):
+  """Tests for ModelEntry acceptance in get_image_generation_tool."""
+
+  async def test_model_entry_extracts_name(self):
+    """Verifies that a ModelEntry object is correctly resolved to its name."""
+    mock_client = mock.MagicMock()
+    entry = sdk_types.ModelEntry(name="custom-image-model")
+    tool = image_generation.get_image_generation_tool(mock_client, model=entry)
+
+    mock_interaction = mock.MagicMock()
+    mock_output = mock.MagicMock()
+    mock_output.type = "image"
+    mock_output.data = base64.b64encode(b"image_bytes").decode("utf-8")
+    mock_output.mime_type = "image/png"
+    mock_interaction.outputs = [mock_output]
+    mock_client.aio.interactions.create = mock.AsyncMock(
+        return_value=mock_interaction
+    )
+
+    await tool(prompt="A cat")
+
+    kwargs = mock_client.aio.interactions.create.call_args.kwargs
+    self.assertEqual(kwargs["model"], "custom-image-model")
 
 
 if __name__ == "__main__":

@@ -42,15 +42,19 @@ class ImageSize(str, enum.Enum):
 
 
 def get_image_generation_tool(
-    client: genai.Client, model: str = sdk_types.DEFAULT_IMAGE_GENERATION_MODEL
+    client: genai.Client,
+    model: (
+        sdk_types.ModelEntry | str
+    ) = sdk_types.DEFAULT_IMAGE_GENERATION_MODEL,
 ):
   """Returns a tool function for generating images.
 
   Args:
       client: The shared genai.Client instance.
-      model: The model to use for generation. Defaults to
-        'gemini-3.1-flash-image-preview'.
+      model: The model to use for generation. Accepts a model name string or a
+        ModelEntry. Defaults to 'gemini-3.1-flash-image-preview'.
   """
+  model_name = model.name if isinstance(model, sdk_types.ModelEntry) else model
 
   @pydantic.validate_call
   async def generate_image(
@@ -85,7 +89,7 @@ def get_image_generation_tool(
     try:
       interaction: interactions.Interaction = (
           await client.aio.interactions.create(
-              model=model,
+              model=model_name,
               input=prompt,
               response_modalities=["image"],
               generation_config=generation_config

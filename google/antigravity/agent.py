@@ -18,6 +18,8 @@ import asyncio
 import logging
 from typing import Any, Callable
 
+import pydantic
+
 from google.antigravity import types
 from google.antigravity.connections import connection as connection_module
 from google.antigravity.connections import local_connection
@@ -31,54 +33,88 @@ from google.antigravity.tools import tool_runner
 from google.antigravity.triggers import trigger_runner
 from google.antigravity.triggers import triggers as triggers_lib
 
+_Hook = hooks.Hook
+
+
+class AgentConfig(pydantic.BaseModel):
+  """Declarative configuration for an Agent.
+
+  This is a pure data object — no runtime state. It can be reused
+  across multiple Agent instances, serialized, or tested in isolation.
+
+  Top-level ``model`` and ``api_key`` are convenience sugar that flow
+  into ``gemini_config``.  Do not set both the sugar and the structured
+  path — a ``ValueError`` is raised on conflict.
+
+  Attributes:
+    system_instructions: Agent instructions. Strings are auto-wrapped in
+      TemplatedSystemInstructions during session start.
+    gemini_config: Model backend configuration.
+    capabilities: Builtin tool enablement. Defaults to read-only.
+    tools: Custom Python tools to register.
+    policies: Custom policies to enforce.
+    hooks: Custom hooks to register.
+    triggers: Custom triggers to register.
+    mcp_servers: MCP server configurations.
+    workspaces: Directory paths to restrict the agent to.
+    model: Sugar — sets gemini_config.models.default.
+    api_key: Sugar — sets gemini_config.api_key.
+  """
+
+  model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+  system_instructions: str | types.SystemInstructions
+  gemini_config: types.GeminiConfig = pydantic.Field(
+      default_factory=types.GeminiConfig
+  )
+  capabilities: types.CapabilitiesConfig = pydantic.Field(
+      default_factory=lambda: types.CapabilitiesConfig(
+          enabled_tools=types.BuiltinTools.read_only()
+      )
+  )
+  tools: list[Callable[..., Any]] = pydantic.Field(default_factory=list)
+  policies: list[policy.Policy] = pydantic.Field(default_factory=list)
+  hooks: list[_Hook] = pydantic.Field(default_factory=list)
+  triggers: list[triggers_lib.Trigger] = pydantic.Field(default_factory=list)
+  mcp_servers: list[dict[str, Any]] = pydantic.Field(default_factory=list)
+  workspaces: list[str] = pydantic.Field(default_factory=list)
+
+  # Top-level sugar — flows into gemini_config.
+  model: str | None = None
+  api_key: str | None = None
+
+  @pydantic.model_validator(mode="after")
+  def _apply_sugar(self) -> "AgentConfig":
+    # Defensive copy: prevent mutation of shared GeminiConfig instances.
+    self.gemini_config = self.gemini_config.model_copy(deep=True)
+
+    if self.model is not None:
+      if "default" in self.gemini_config.models.model_fields_set:
+        raise ValueError(
+            "Cannot set both 'model' sugar and "
+            "'gemini_config.models.default'. Use one or the other."
+        )
+      self.gemini_config.models.default = types.ModelEntry(name=self.model)
+    if self.api_key is not None:
+      if self.gemini_config.api_key is not None:
+        raise ValueError(
+            "Cannot set both 'api_key' sugar and "
+            "'gemini_config.api_key'. Use one or the other."
+        )
+      self.gemini_config.api_key = self.api_key
+    return self
+
 
 class Agent:
   """High-level Agent API for simplified interaction."""
 
-  def __init__(
-      self,
-      system_instructions: str | types.SystemInstructions | None = None,
-      tools: list[Callable[..., Any]] | None = None,
-      model: str = types.DEFAULT_MODEL,
-      api_key: str | None = None,
-      read_only: bool = True,
-      policies: list[policy.Policy] | None = None,
-      hooks_list: list[hooks.Hook] | None = None,
-      triggers: list[triggers_lib.Trigger] | None = None,
-      mcp_servers: list[dict[str, Any]] | None = None,
-      workspaces: list[str] | None = None,
-  ):
+  def __init__(self, config: AgentConfig):
     """Initializes the Agent.
 
     Args:
-        system_instructions: System instructions for the agent. If a string is
-          passed, it will be appended to the default system instructions. Use
-          `types.CustomSystemInstructions` to completely replace them. If None,
-          no additional system instructions will be added.
-        tools: Custom Python tools to register.
-        model: Gemini model name.
-        api_key: API key for Gemini API.
-        read_only: If True, only read-only builtin tools are enabled.
-        policies: Custom policies to enforce.
-        hooks_list: Custom hooks to register. Should be instances of hook
-          classes defined in `hooks.py`.
-        triggers: Custom triggers to register. Should be async functions taking
-          TriggerContext.
-        mcp_servers: MCP server configurations. List of dicts, e.g., `[{"type":
-          "stdio", "command": "cmd", "args": []}]` or `[{"type": "sse", "url":
-          "url"}]`.
-        workspaces: List of directory paths to restrict the agent to.
+        config: Declarative agent configuration.
     """
-    self.system_instructions = system_instructions
-    self.tools = tools or []
-    self.model = model
-    self.api_key = api_key
-    self.read_only = read_only
-    self.policies = policies or []
-    self.hooks_list = hooks_list or []
-    self.triggers = triggers or []
-    self.mcp_servers = mcp_servers or []
-    self.workspaces = workspaces or []
+    self._config = config
     self._strategy = None
     self._conversation = None
     self._conversation_cm = None
@@ -86,8 +122,8 @@ class Agent:
     self._hook_runner = None
     self._trigger_runner = None
     self._mcp_bridge = None
-    self._pending_hooks = list(self.hooks_list)
-    self._pending_triggers = list(self.triggers)
+    self._pending_hooks = list(config.hooks)
+    self._pending_triggers = list(config.triggers)
 
   def register_hook(self, hook: hooks.Hook):
     """Registers a hook by inferring its type."""
@@ -117,7 +153,7 @@ class Agent:
     """Starts the agent session."""
     logging.info("Starting Agent session")
     try:
-      self._tool_runner = tool_runner.ToolRunner(tools=self.tools)
+      self._tool_runner = tool_runner.ToolRunner(tools=self._config.tools)
 
       self._hook_runner = hook_runner.HookRunner()
 
@@ -127,11 +163,23 @@ class Agent:
       self._pending_hooks.clear()
 
       # Apply policies
-      active_policies = list(self.policies)
-      if not self.read_only and not active_policies:
+      active_policies = list(self._config.policies)
+      cfg = self._config.capabilities
+      read_only_tools = set(types.BuiltinTools.read_only())
+      # enabled_tools and disabled_tools are mutually exclusive
+      # (enforced by CapabilitiesConfig validation).
+      if cfg.enabled_tools is not None:
+        active_tools = set(cfg.enabled_tools)
+      elif cfg.disabled_tools is not None:
+        active_tools = set(types.BuiltinTools) - set(cfg.disabled_tools)
+      else:
+        active_tools = set(types.BuiltinTools)
+      has_write_tools = bool(active_tools - read_only_tools)
+      if has_write_tools and not active_policies:
         raise ValueError(
-            "Policies must be provided when read_only is False to prevent "
-            "interactive handlers from hanging in non-interactive contexts."
+            "Policies must be provided when non-read-only builtin tools are "
+            "enabled to prevent interactive handlers from hanging in "
+            "non-interactive contexts."
         )
 
       if active_policies:
@@ -140,10 +188,10 @@ class Agent:
         )
 
       # Connect MCP servers
-      if self.mcp_servers:
+      if self._config.mcp_servers:
         logging.info("Connecting to MCP servers...")
         self._mcp_bridge = bridge.McpBridge(self._tool_runner)
-        for server_cfg in self.mcp_servers:
+        for server_cfg in self._config.mcp_servers:
           srv_type = server_cfg.get("type")
           if srv_type == "stdio":
             await self._mcp_bridge.connect_stdio(
@@ -156,31 +204,24 @@ class Agent:
           else:
             raise ValueError(f"Unknown MCP server type: {srv_type}")
 
-      if self.read_only:
-        capabilities_config = types.CapabilitiesConfig(
-            enabled_tools=types.BuiltinTools.read_only()
-        )
-      else:
-        capabilities_config = types.CapabilitiesConfig()
-
-      if isinstance(self.system_instructions, str):
+      if isinstance(self._config.system_instructions, str):
         si = types.TemplatedSystemInstructions(
             sections=[
-                types.SystemInstructionSection(content=self.system_instructions)
+                types.SystemInstructionSection(
+                    content=self._config.system_instructions
+                )
             ]
         )
       else:
-        si = self.system_instructions
+        si = self._config.system_instructions
 
       self._strategy = local_connection.LocalConnectionStrategy(
           tool_runner=self._tool_runner,
           hook_runner=self._hook_runner,
-          gemini_config=types.GeminiConfig(
-              model_name=self.model, api_key=self.api_key
-          ),
+          gemini_config=self._config.gemini_config,
           system_instructions=si,
-          capabilities_config=capabilities_config,
-          workspaces=self.workspaces,
+          capabilities_config=self._config.capabilities,
+          workspaces=self._config.workspaces,
       )
 
       logging.info("Starting connection and creating conversation...")

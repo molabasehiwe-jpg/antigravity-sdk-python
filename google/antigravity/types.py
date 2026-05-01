@@ -19,7 +19,7 @@ types. They are pure Python Pydantic V2 models with no proto dependencies.
 """
 
 import enum
-from typing import Any, Callable, List, Optional, Union
+from typing import Annotated, Any, Callable, List, Optional, Union
 
 import pydantic
 
@@ -52,21 +52,73 @@ class ThinkingLevel(str, enum.Enum):
   HIGH = "high"
 
 
+class GenerationConfig(pydantic.BaseModel):
+  """Generation parameters for a model.
+
+  Attributes:
+    thinking_level: Thinking level for models that support extended thinking.
+      When None, the model's default level is used.
+  """
+
+  thinking_level: ThinkingLevel | None = None
+
+
+def _coerce_model_entry(v: "ModelEntry | str") -> "ModelEntry":
+  """Coerce a bare model name string into a ModelEntry."""
+  if isinstance(v, str):
+    return ModelEntry(name=v)
+  return v
+
+
+class ModelEntry(pydantic.BaseModel):
+  """A model with optional auth and generation overrides.
+
+  Attributes:
+    name: Model name (e.g. 'gemini-3.1-pro-preview').
+    api_key: Per-model API key override. Falls back to GeminiConfig.api_key.
+    generation: Generation parameters for this model.
+  """
+
+  name: str
+  api_key: str | None = None
+  generation: GenerationConfig = pydantic.Field(
+      default_factory=GenerationConfig
+  )
+
+
+class ModelConfig(pydantic.BaseModel):
+  """Model selection for each capability.
+
+  Slots accept a bare model name string (coerced to ModelEntry) or
+  a ModelEntry for per-model overrides. After validation, all slots
+  are always ModelEntry.
+
+  Attributes:
+    default: The primary reasoning model.
+    image_generation: The model used for image generation.
+  """
+
+  default: Annotated[
+      ModelEntry, pydantic.BeforeValidator(_coerce_model_entry)
+  ] = pydantic.Field(default_factory=lambda: ModelEntry(name=DEFAULT_MODEL))
+  image_generation: Annotated[
+      ModelEntry, pydantic.BeforeValidator(_coerce_model_entry)
+  ] = pydantic.Field(
+      default_factory=lambda: ModelEntry(name=DEFAULT_IMAGE_GENERATION_MODEL)
+  )
+
+
 class GeminiConfig(pydantic.BaseModel):
   """Configuration for the Gemini model backend.
 
   Attributes:
-    api_key: API key for Gemini API. Falls back to $GEMINI_API_KEY if not set.
-    model_name: Gemini model name (e.g. 'gemini-3.1-pro-preview'). See
-      https://ai.google.dev/gemini-api/docs/models for available models.
-    thinking_level: Thinking level for models that support extended thinking.
-      When None, the model's default level is used. See
-      https://ai.google.dev/gemini-api/docs/thinking#thinking-levels.
+    api_key: Shared API key for all models. Falls back to $GEMINI_API_KEY if not
+      set. Individual ModelEntry instances can override this.
+    models: Per-modality model selection and configuration.
   """
 
   api_key: str | None = None
-  model_name: str = DEFAULT_MODEL
-  thinking_level: ThinkingLevel | None = None
+  models: ModelConfig = pydantic.Field(default_factory=ModelConfig)
 
 
 class SystemInstructionSection(pydantic.BaseModel):

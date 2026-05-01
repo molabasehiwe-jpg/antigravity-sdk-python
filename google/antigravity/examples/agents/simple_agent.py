@@ -17,16 +17,17 @@
 import asyncio
 import logging
 from google.antigravity.agent import Agent
+from google.antigravity.agent import AgentConfig
 
 
 async def main():
   logging.basicConfig(level=logging.INFO)
 
   print("Creating agent...")
-  async with Agent(
+  config = AgentConfig(
       system_instructions="You are a helpful assistant.",
-      read_only=True,
-  ) as agent:
+  )
+  async with Agent(config) as agent:
 
     print("\nChatting with agent...")
     response = await agent.chat("Hello! What is 2+2?")

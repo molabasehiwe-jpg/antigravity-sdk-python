@@ -20,7 +20,9 @@ import os
 import shutil
 import tempfile
 
+from google.antigravity import types
 from google.antigravity.agent import Agent
+from google.antigravity.agent import AgentConfig
 from google.antigravity.hooks import policy
 
 
@@ -54,15 +56,16 @@ async def main():
     })
 
   print("Creating agent...")
-  async with Agent(
+  config = AgentConfig(
       system_instructions=(
           "You are a helpful assistant. Use your tools when needed."
       ),
       tools=[read_file_upside_down],
       mcp_servers=mcp_servers,
-      read_only=False,  # Enable all builtin tools (write + read)
-      policies=[policy.allow("*")],  # Auto-approve all tool calls
-  ) as agent:
+      capabilities=types.CapabilitiesConfig(),
+      policies=[policy.allow("*")],
+  )
+  async with Agent(config) as agent:
 
     print("\nChatting with agent...")
     # Create a temp file to read

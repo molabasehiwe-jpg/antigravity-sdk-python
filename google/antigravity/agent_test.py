@@ -42,29 +42,10 @@ class AgentTest(unittest.IsolatedAsyncioTestCase):
     mock_cm.__aenter__.return_value = mock_conversation
     mock_conv_create.return_value = mock_cm
 
-    async with agent.Agent(system_instructions="test") as ag:
+    config = agent.AgentConfig(system_instructions="test")
+    async with agent.Agent(config) as ag:
       self.assertEqual(ag._conversation, mock_conversation)
 
-  @mock.patch(
-      "google.antigravity.agent."
-      "local_connection.LocalConnectionStrategy"
-  )
-  @mock.patch.object(conversation.Conversation, "create")
-  async def test_agent_lifecycle_no_system_instructions(
-      self, mock_conv_create, mock_strategy_class
-  ):
-    mock_strategy_instance = mock.MagicMock()
-    mock_strategy_class.return_value = mock_strategy_instance
-
-    mock_conversation = mock.MagicMock(spec=conversation.Conversation)
-    mock_cm = mock.AsyncMock()
-    mock_cm.__aenter__.return_value = mock_conversation
-    mock_conv_create.return_value = mock_cm
-
-    async with agent.Agent() as ag:
-      self.assertEqual(ag._conversation, mock_conversation)
-      _, kwargs = mock_strategy_class.call_args
-      self.assertIsNone(kwargs.get("system_instructions"))
 
   @mock.patch(
       "google.antigravity.agent."
@@ -89,7 +70,8 @@ class AgentTest(unittest.IsolatedAsyncioTestCase):
         )
     )
 
-    async with agent.Agent(system_instructions="test") as ag:
+    config = agent.AgentConfig(system_instructions="test")
+    async with agent.Agent(config) as ag:
       response = await ag.chat("Hello")
       self.assertEqual(response.text, "Hello back")
       self.assertEqual(len(response.steps), 1)
@@ -109,7 +91,8 @@ class AgentTest(unittest.IsolatedAsyncioTestCase):
     mock_strategy_instance.stop = mock.AsyncMock()
     mock_strategy_class.return_value = mock_strategy_instance
 
-    async with agent.Agent(system_instructions="test"):
+    config = agent.AgentConfig(system_instructions="test")
+    async with agent.Agent(config):
       _, kwargs = mock_strategy_class.call_args
       capabilities_config = kwargs.get("capabilities_config")
       self.assertIsNotNone(capabilities_config)
@@ -131,9 +114,113 @@ class AgentTest(unittest.IsolatedAsyncioTestCase):
     mock_strategy_instance.stop = mock.AsyncMock()
     mock_strategy_class.return_value = mock_strategy_instance
 
+    config = agent.AgentConfig(
+        system_instructions="test",
+        capabilities=types.CapabilitiesConfig(),
+    )
     with self.assertRaises(ValueError):
-      async with agent.Agent(system_instructions="test", read_only=False):
+      async with agent.Agent(config):
         pass
+
+  @mock.patch(
+      "google.antigravity.agent."
+      "local_connection.LocalConnectionStrategy"
+  )
+  @mock.patch.object(conversation.Conversation, "create")
+  async def test_policy_guard_explicit_write_tool(
+      self, mock_conv_create, mock_strategy_class
+  ):
+    """Guard fires when enabled_tools includes a non-read-only tool."""
+    del mock_conv_create
+    mock_strategy_class.return_value = mock.MagicMock(stop=mock.AsyncMock())
+    config = agent.AgentConfig(
+        system_instructions="test",
+        capabilities=types.CapabilitiesConfig(
+            enabled_tools=[types.BuiltinTools.RUN_COMMAND],
+        ),
+    )
+    with self.assertRaises(ValueError):
+      async with agent.Agent(config):
+        pass
+
+  @mock.patch(
+      "google.antigravity.agent."
+      "local_connection.LocalConnectionStrategy"
+  )
+  @mock.patch.object(conversation.Conversation, "create")
+  async def test_policy_guard_explicit_all_tools(
+      self, mock_conv_create, mock_strategy_class
+  ):
+    """Guard fires when all tools are listed explicitly."""
+    del mock_conv_create
+    mock_strategy_class.return_value = mock.MagicMock(stop=mock.AsyncMock())
+    config = agent.AgentConfig(
+        system_instructions="test",
+        capabilities=types.CapabilitiesConfig(
+            enabled_tools=list(types.BuiltinTools),
+        ),
+    )
+    with self.assertRaises(ValueError):
+      async with agent.Agent(config):
+        pass
+
+  @mock.patch(
+      "google.antigravity.agent."
+      "local_connection.LocalConnectionStrategy"
+  )
+  @mock.patch.object(conversation.Conversation, "create")
+  async def test_policy_guard_empty_disabled_tools(
+      self, mock_conv_create, mock_strategy_class
+  ):
+    """Guard fires when disabled_tools=[] (= all tools enabled)."""
+    del mock_conv_create
+    mock_strategy_class.return_value = mock.MagicMock(stop=mock.AsyncMock())
+    config = agent.AgentConfig(
+        system_instructions="test",
+        capabilities=types.CapabilitiesConfig(disabled_tools=[]),
+    )
+    with self.assertRaises(ValueError):
+      async with agent.Agent(config):
+        pass
+
+  @mock.patch(
+      "google.antigravity.agent."
+      "local_connection.LocalConnectionStrategy"
+  )
+  @mock.patch.object(conversation.Conversation, "create")
+  async def test_policy_guard_read_only_explicit_passes(
+      self, mock_conv_create, mock_strategy_class
+  ):
+    """No guard when only read-only tools are explicitly enabled."""
+    del mock_conv_create
+    mock_strategy_class.return_value = mock.MagicMock(stop=mock.AsyncMock())
+    config = agent.AgentConfig(
+        system_instructions="test",
+        capabilities=types.CapabilitiesConfig(
+            enabled_tools=types.BuiltinTools.read_only(),
+        ),
+    )
+    async with agent.Agent(config):
+      pass  # Should not raise.
+
+  @mock.patch(
+      "google.antigravity.agent."
+      "local_connection.LocalConnectionStrategy"
+  )
+  @mock.patch.object(conversation.Conversation, "create")
+  async def test_policy_guard_write_tools_with_policy_passes(
+      self, mock_conv_create, mock_strategy_class
+  ):
+    """No guard when write tools are enabled AND policies are provided."""
+    del mock_conv_create
+    mock_strategy_class.return_value = mock.MagicMock(stop=mock.AsyncMock())
+    config = agent.AgentConfig(
+        system_instructions="test",
+        capabilities=types.CapabilitiesConfig(),
+        policies=[policy.deny("*")],
+    )
+    async with agent.Agent(config):
+      pass  # Should not raise.
 
   @mock.patch(
       "google.antigravity.agent."
@@ -157,13 +244,13 @@ class AgentTest(unittest.IsolatedAsyncioTestCase):
     my_hook = MyPreTurnHook()
 
     # Test constructor registration
-    async with agent.Agent(
-        system_instructions="test", hooks_list=[my_hook]
-    ) as ag:
+    config = agent.AgentConfig(system_instructions="test", hooks=[my_hook])
+    async with agent.Agent(config) as ag:
       self.assertIn(my_hook, ag._hook_runner.pre_turn_hooks)
 
     # Test dynamic registration
-    async with agent.Agent(system_instructions="test") as ag:
+    config = agent.AgentConfig(system_instructions="test")
+    async with agent.Agent(config) as ag:
       ag.register_hook(my_hook)
       self.assertIn(my_hook, ag._hook_runner.pre_turn_hooks)
 
@@ -202,7 +289,10 @@ class AgentTest(unittest.IsolatedAsyncioTestCase):
       pass
 
     # Test constructor registration: TriggerRunner started with trigger.
-    async with agent.Agent(system_instructions="test", triggers=[my_trigger]):
+    config = agent.AgentConfig(
+        system_instructions="test", triggers=[my_trigger]
+    )
+    async with agent.Agent(config):
       mock_trigger_runner_class.assert_called_once()
       call_kwargs = mock_trigger_runner_class.call_args[1]
       self.assertEqual(call_kwargs["triggers"], [my_trigger])
@@ -215,7 +305,8 @@ class AgentTest(unittest.IsolatedAsyncioTestCase):
     mock_runner_instance.reset_mock()
 
     # Test dynamic registration before start.
-    ag = agent.Agent(system_instructions="test")
+    config = agent.AgentConfig(system_instructions="test")
+    ag = agent.Agent(config)
     ag.register_trigger(my_trigger)
     async with ag:
       mock_trigger_runner_class.assert_called_once()
@@ -244,7 +335,8 @@ class AgentTest(unittest.IsolatedAsyncioTestCase):
 
     my_hook = MyPreTurnHook()
 
-    ag = agent.Agent(system_instructions="test")
+    config = agent.AgentConfig(system_instructions="test")
+    ag = agent.Agent(config)
     ag.register_hook(my_hook)
     self.assertIn(my_hook, ag._pending_hooks)
 
@@ -269,9 +361,10 @@ class AgentTest(unittest.IsolatedAsyncioTestCase):
     async def my_trigger(_):
       pass
 
-    async with agent.Agent(
+    config = agent.AgentConfig(
         system_instructions="test", triggers=[my_trigger]
-    ) as ag:
+    )
+    async with agent.Agent(config) as ag:
       with self.assertRaises(RuntimeError):
         ag.register_trigger(my_trigger)
 
@@ -289,13 +382,14 @@ class AgentTest(unittest.IsolatedAsyncioTestCase):
     mock_strategy_instance.stop = mock.AsyncMock()
     mock_strategy_class.return_value = mock_strategy_instance
 
-    my_policy = mock.MagicMock(spec=policy.Policy)
-    my_policy.decision = policy.Decision.APPROVE
-    my_policy.tool = "some_tool"
+    my_policy = policy.allow("some_tool")
 
-    async with agent.Agent(
-        system_instructions="test", policies=[my_policy]
-    ) as ag:
+    config = agent.AgentConfig(
+        system_instructions="test",
+        capabilities=types.CapabilitiesConfig(),
+        policies=[my_policy],
+    )
+    async with agent.Agent(config) as ag:
       self.assertEqual(len(ag._hook_runner.pre_tool_call_decide_hooks), 1)
 
   @mock.patch(
@@ -312,13 +406,14 @@ class AgentTest(unittest.IsolatedAsyncioTestCase):
     mock_strategy_instance.stop = mock.AsyncMock()
     mock_strategy_class.return_value = mock_strategy_instance
 
-    my_policy = mock.MagicMock(spec=policy.Policy)
-    my_policy.decision = policy.Decision.APPROVE
-    my_policy.tool = "some_tool"
+    my_policy = policy.allow("some_tool")
 
-    async with agent.Agent(
-        system_instructions="test", read_only=False, policies=[my_policy]
-    ):
+    config = agent.AgentConfig(
+        system_instructions="test",
+        capabilities=types.CapabilitiesConfig(),
+        policies=[my_policy],
+    )
+    async with agent.Agent(config):
       _, kwargs = mock_strategy_class.call_args
       capabilities_config = kwargs.get("capabilities_config")
       self.assertIsNotNone(capabilities_config)
@@ -343,23 +438,24 @@ class AgentTest(unittest.IsolatedAsyncioTestCase):
     mcp_servers = [{"type": "unknown_type"}]
 
     with self.assertRaises(ValueError):
-      async with agent.Agent(
+      config = agent.AgentConfig(
           system_instructions="test", mcp_servers=mcp_servers
-      ):
+      )
+      async with agent.Agent(config):
         pass
 
   async def test_agent_chat_before_start(self):
-    ag = agent.Agent(system_instructions="test")
+    ag = agent.Agent(agent.AgentConfig(system_instructions="test"))
     with self.assertRaises(RuntimeError):
       await ag.chat("hello")
 
   async def test_agent_connection_before_start(self):
-    ag = agent.Agent(system_instructions="test")
+    ag = agent.Agent(agent.AgentConfig(system_instructions="test"))
     with self.assertRaises(RuntimeError):
       _ = ag.connection
 
   async def test_agent_run_interactive_loop_before_start(self):
-    ag = agent.Agent(system_instructions="test")
+    ag = agent.Agent(agent.AgentConfig(system_instructions="test"))
     with self.assertRaises(RuntimeError):
       await ag.run_interactive_loop()
 
@@ -376,26 +472,36 @@ class AgentTest(unittest.IsolatedAsyncioTestCase):
     mock_strategy_class.return_value = mock_strategy_instance
 
     with mock.patch.dict("os.environ", {}, clear=True):
-      async with agent.Agent(system_instructions="test", api_key="test_key"):
+      config = agent.AgentConfig(system_instructions="test", api_key="test_key")
+      async with agent.Agent(config):
         self.assertIsNone(os.environ.get("GEMINI_API_KEY"))
-        # Also check config
         _, kwargs = mock_strategy_class.call_args
         gemini_config = kwargs.get("gemini_config")
         self.assertIsNotNone(gemini_config)
         self.assertEqual(gemini_config.api_key, "test_key")
+
+  @mock.patch(
+      "google.antigravity.agent."
+      "local_connection.LocalConnectionStrategy"
+  )
+  @mock.patch.object(conversation.Conversation, "create")
+  async def test_agent_model_sugar_flows_to_strategy(
+      self, mock_conv_create, mock_strategy_class
+  ):
+    del mock_conv_create  # Unused.
 
     mock_strategy_instance = mock.MagicMock()
     mock_strategy_instance.stop = mock.AsyncMock()
     mock_strategy_class.return_value = mock_strategy_instance
 
-    with mock.patch.dict("os.environ", {}, clear=True):
-      async with agent.Agent(system_instructions="test", api_key="test_key"):
-        self.assertIsNone(os.environ.get("GEMINI_API_KEY"))
-        # Also check config
-        _, kwargs = mock_strategy_class.call_args
-        gemini_config = kwargs.get("gemini_config")
-        self.assertIsNotNone(gemini_config)
-        self.assertEqual(gemini_config.api_key, "test_key")
+    config = agent.AgentConfig(
+        system_instructions="test", model="gemini-2.5-pro"
+    )
+    async with agent.Agent(config):
+      _, kwargs = mock_strategy_class.call_args
+      gemini_config = kwargs.get("gemini_config")
+      self.assertIsNotNone(gemini_config)
+      self.assertEqual(gemini_config.models.default.name, "gemini-2.5-pro")
 
   @mock.patch(
       "google.antigravity.agent.local_connection.LocalConnectionStrategy"
@@ -409,7 +515,8 @@ class AgentTest(unittest.IsolatedAsyncioTestCase):
     mock_strategy_class.return_value = mock_strategy_instance
 
     si_obj = types.CustomSystemInstructions(text="custom si")
-    async with agent.Agent(system_instructions=si_obj):
+    config = agent.AgentConfig(system_instructions=si_obj)
+    async with agent.Agent(config):
       _, kwargs = mock_strategy_class.call_args
       si = kwargs.get("system_instructions")
       self.assertEqual(si, si_obj)
@@ -429,9 +536,10 @@ class AgentTest(unittest.IsolatedAsyncioTestCase):
     mock_strategy_class.return_value = mock_strategy_instance
 
     workspaces = ["/path/1", "/path/2"]
-    async with agent.Agent(
+    config = agent.AgentConfig(
         system_instructions="test", workspaces=workspaces
-    ) as _:
+    )
+    async with agent.Agent(config) as _:
       _, kwargs = mock_strategy_class.call_args
       ws = kwargs.get("workspaces")
       self.assertEqual(ws, workspaces)
@@ -465,9 +573,10 @@ class AgentTest(unittest.IsolatedAsyncioTestCase):
         {"type": "sse", "url": "http://localhost:8000/sse"},
     ]
 
-    async with agent.Agent(
+    config = agent.AgentConfig(
         system_instructions="test", mcp_servers=mcp_servers
-    ) as ag:
+    )
+    async with agent.Agent(config) as ag:
       mock_mcp_bridge.assert_called_once_with(ag._tool_runner)
       mock_bridge_instance.connect_stdio.assert_called_once_with(
           "python3", ["server.py"]
@@ -507,7 +616,8 @@ class AgentTest(unittest.IsolatedAsyncioTestCase):
     # Mock input to return '', 'hello' then 'exit'
     mock_to_thread.side_effect = ["", "hello", "exit"]
 
-    async with agent.Agent(system_instructions="test") as ag:
+    config = agent.AgentConfig(system_instructions="test")
+    async with agent.Agent(config) as ag:
       with mock.patch("builtins.print") as mock_print:
         await ag.run_interactive_loop()
 
@@ -530,7 +640,8 @@ class AgentTest(unittest.IsolatedAsyncioTestCase):
 
     mock_to_thread.side_effect = KeyboardInterrupt()
 
-    async with agent.Agent(system_instructions="test") as ag:
+    config = agent.AgentConfig(system_instructions="test")
+    async with agent.Agent(config) as ag:
       with mock.patch("builtins.print") as mock_print:
         await ag.run_interactive_loop()
 
@@ -552,7 +663,8 @@ class AgentTest(unittest.IsolatedAsyncioTestCase):
 
     mock_to_thread.side_effect = [ValueError("Fail"), "exit"]
 
-    async with agent.Agent(system_instructions="test") as ag:
+    config = agent.AgentConfig(system_instructions="test")
+    async with agent.Agent(config) as ag:
       with mock.patch("builtins.print") as mock_print:
         await ag.run_interactive_loop()
 
@@ -577,9 +689,100 @@ class AgentTest(unittest.IsolatedAsyncioTestCase):
     mock_cm.__aenter__.return_value = mock_conversation
     mock_conv_create.return_value = mock_cm
 
-    async with agent.Agent(system_instructions="test") as ag:
+    config = agent.AgentConfig(system_instructions="test")
+    async with agent.Agent(config) as ag:
       conn = ag.connection
       self.assertEqual(conn, mock_conversation._connection)
+
+
+class AgentConfigTest(unittest.TestCase):
+  """Tests for AgentConfig sugar, conflict guards, and defensive copy."""
+
+  def test_sugar_model_flows_to_gemini_config(self):
+    """Verifies model sugar flows to gemini_config.models.default.name."""
+    config = agent.AgentConfig(
+        system_instructions="test", model="gemini-2.5-pro"
+    )
+    self.assertEqual(config.gemini_config.models.default.name, "gemini-2.5-pro")
+
+  def test_sugar_api_key_flows_to_gemini_config(self):
+    """Verifies api_key sugar flows to gemini_config.api_key."""
+    config = agent.AgentConfig(system_instructions="test", api_key="my-key")
+    self.assertEqual(config.gemini_config.api_key, "my-key")
+
+  def test_conflict_model_raises(self):
+    """Verifies ValueError when both model sugar and structured config are set."""
+    with self.assertRaises(ValueError):
+      agent.AgentConfig(
+          system_instructions="test",
+          model="gemini-2.5-pro",
+          gemini_config=types.GeminiConfig(
+              models=types.ModelConfig(
+                  default=types.ModelEntry(name="different-model"),
+              ),
+          ),
+      )
+
+  def test_conflict_api_key_raises(self):
+    """Verifies ValueError when both api_key sugar and gemini_config.api_key are set."""
+    with self.assertRaises(ValueError):
+      agent.AgentConfig(
+          system_instructions="test",
+          api_key="sugar-key",
+          gemini_config=types.GeminiConfig(api_key="config-key"),
+      )
+
+  def test_defensive_copy(self):
+    """Verifies shared GeminiConfig is not cross-contaminated."""
+    shared = types.GeminiConfig()
+    config1 = agent.AgentConfig(
+        system_instructions="test",
+        gemini_config=shared,
+        model="model-a",
+    )
+    config2 = agent.AgentConfig(
+        system_instructions="test",
+        gemini_config=shared,
+        model="model-b",
+    )
+    self.assertEqual(config1.gemini_config.models.default.name, "model-a")
+    self.assertEqual(config2.gemini_config.models.default.name, "model-b")
+    self.assertEqual(shared.models.default.name, types.DEFAULT_MODEL)
+
+  def test_defaults(self):
+    """Verifies AgentConfig defaults: read-only capabilities, default model."""
+    config = agent.AgentConfig(system_instructions="test")
+    self.assertEqual(
+        config.capabilities.enabled_tools,
+        types.BuiltinTools.read_only(),
+    )
+    self.assertEqual(
+        config.gemini_config.models.default.name, types.DEFAULT_MODEL
+    )
+    self.assertIsNone(config.gemini_config.api_key)
+
+  def test_model_sugar_does_not_clobber_image_generation(self):
+    """Verifies model sugar only sets default slot, not image_generation."""
+    config = agent.AgentConfig(
+        system_instructions="test", model="custom-chat-model"
+    )
+    self.assertEqual(
+        config.gemini_config.models.default.name, "custom-chat-model"
+    )
+    self.assertEqual(
+        config.gemini_config.models.image_generation.name,
+        types.DEFAULT_IMAGE_GENERATION_MODEL,
+    )
+
+  def test_conflict_model_with_gemini_config_no_model(self):
+    """Verifies no conflict when gemini_config has no explicit default."""
+    config = agent.AgentConfig(
+        system_instructions="test",
+        model="custom-model",
+        gemini_config=types.GeminiConfig(api_key="key-only"),
+    )
+    self.assertEqual(config.gemini_config.models.default.name, "custom-model")
+    self.assertEqual(config.gemini_config.api_key, "key-only")
 
 
 if __name__ == "__main__":

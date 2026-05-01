@@ -458,45 +458,76 @@ class GeminiConfigTest(unittest.TestCase):
   """Tests for the GeminiConfig Pydantic model."""
 
   def test_default_construction(self):
-    """Verifies that GeminiConfig can be constructed with all defaults.
-
-    Why: Users should be able to create a GeminiConfig() with zero arguments
-    and get sane defaults (api_key=None, default model, no thinking level).
-    How: Assert each default field value matches the documented default.
-    """
+    """Verifies that GeminiConfig can be constructed with all defaults."""
     config = types.GeminiConfig()
     self.assertIsNone(config.api_key)
-    self.assertEqual(config.model_name, "gemini-3-flash-preview")
-    self.assertIsNone(config.thinking_level)
+    self.assertEqual(config.models.default.name, "gemini-3-flash-preview")
+    self.assertIsNone(config.models.default.generation.thinking_level)
 
   def test_explicit_field_assignment(self):
-    """Verifies that all fields can be explicitly set.
-
-    Why: Ensures the model accepts and stores user-provided values correctly.
-    How: Construct with explicit values and assert round-trip fidelity.
-    """
+    """Verifies that all fields can be explicitly set."""
     config = types.GeminiConfig(
         api_key="test-key",
-        model_name="gemini-2.5-pro",
-        thinking_level=types.ThinkingLevel.LOW,
+        models=types.ModelConfig(
+            default=types.ModelEntry(
+                name="gemini-2.5-pro",
+                generation=types.GenerationConfig(
+                    thinking_level=types.ThinkingLevel.LOW,
+                ),
+            ),
+        ),
     )
     self.assertEqual(config.api_key, "test-key")
-    self.assertEqual(config.model_name, "gemini-2.5-pro")
-    self.assertEqual(config.thinking_level, types.ThinkingLevel.LOW)
+    self.assertEqual(config.models.default.name, "gemini-2.5-pro")
+    self.assertEqual(
+        config.models.default.generation.thinking_level,
+        types.ThinkingLevel.LOW,
+    )
+
+  def test_string_coercion_in_model_config(self):
+    """Verifies that ModelConfig coerces strings to ModelEntry."""
+    config = types.ModelConfig(default="gemini-2.5-pro")
+    self.assertIsInstance(config.default, types.ModelEntry)
+    self.assertEqual(config.default.name, "gemini-2.5-pro")
 
   def test_thinking_level_from_string(self):
-    """Verifies that thinking_level accepts raw string values.
-
-    Why: Pydantic should coerce valid strings into ThinkingLevel members,
-    making the API convenient for users who pass strings from config files.
-    """
-    config = types.GeminiConfig(thinking_level="high")
-    self.assertEqual(config.thinking_level, types.ThinkingLevel.HIGH)
+    """Verifies that thinking_level accepts raw string values."""
+    gen = types.GenerationConfig(thinking_level="high")
+    self.assertEqual(gen.thinking_level, types.ThinkingLevel.HIGH)
 
   def test_thinking_level_invalid_string(self):
     """Verifies that invalid thinking_level strings raise ValidationError."""
     with self.assertRaises(pydantic.ValidationError):
-      types.GeminiConfig(thinking_level="turbo")
+      types.GenerationConfig(thinking_level="turbo")
+
+  def test_per_model_api_key(self):
+    """Verifies per-model API key overrides."""
+    entry = types.ModelEntry(name="model-x", api_key="per-model-key")
+    config = types.GeminiConfig(
+        api_key="shared-key",
+        models=types.ModelConfig(default=entry),
+    )
+    self.assertEqual(config.api_key, "shared-key")
+    self.assertEqual(config.models.default.api_key, "per-model-key")
+
+  def test_image_generation_model_default(self):
+    """Verifies the default image generation model."""
+    config = types.ModelConfig()
+    self.assertEqual(
+        config.image_generation.name, "gemini-3.1-flash-image-preview"
+    )
+
+  def test_string_coercion_image_generation_slot(self):
+    """Verifies that BeforeValidator coerces string to ModelEntry for image_generation."""
+    config = types.ModelConfig(image_generation="custom-image-model")
+    self.assertIsInstance(config.image_generation, types.ModelEntry)
+    self.assertEqual(config.image_generation.name, "custom-image-model")
+
+  def test_gemini_config_mutable_for_sugar(self):
+    """Verifies GeminiConfig fields can be mutated (needed by AgentConfig sugar)."""
+    config = types.GeminiConfig()
+    config.api_key = "new-key"
+    self.assertEqual(config.api_key, "new-key")
 
 
 class SystemInstructionsTest(unittest.TestCase):

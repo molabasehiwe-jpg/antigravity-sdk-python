@@ -20,6 +20,7 @@ import logging
 import os
 from google.antigravity import types
 from google.antigravity.agent import Agent
+from google.antigravity.agent import AgentConfig
 from google.antigravity.hooks import cli
 from google.antigravity.hooks import hooks
 from google.antigravity.hooks import policy
@@ -125,13 +126,14 @@ async def main():
   )
 
   print("Creating Doc Maintenance Agent...")
-  async with Agent(
+  config = AgentConfig(
       system_instructions=system_instructions,
       policies=policies,
-      hooks_list=[PrintToolCallHook()],
-      read_only=False,  # We want to allow edits (to .md files)
-      workspaces=[target_dir],  # Restrict to target directory
-  ) as agent:
+      hooks=[PrintToolCallHook()],
+      capabilities=types.CapabilitiesConfig(),
+      workspaces=[target_dir],
+  )
+  async with Agent(config) as agent:
 
     print(f"\nSending prompt: {args.prompt}")
     assert agent._conversation is not None

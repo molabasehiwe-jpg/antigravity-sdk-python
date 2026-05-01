@@ -69,12 +69,13 @@ async def main():
   )
 
   print("Creating agent with advanced templated instructions...")
-  async with agent_module.Agent(
+  config = agent_module.AgentConfig(
       system_instructions=templated_si,
       tools=[check_vulnerability_database],
-      read_only=False,  # Allow tool execution
+      capabilities=types.CapabilitiesConfig(),
       policies=[example_policies.BLOCK_RM_POLICY],
-  ) as agent:
+  )
+  async with agent_module.Agent(config) as agent:
     print("\nChatting with agent...")
     response = await agent.chat(
         "Should I use the library 'insecure-lib' in my project?"

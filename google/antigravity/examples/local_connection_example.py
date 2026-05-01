@@ -104,7 +104,11 @@ async def run():
     strategy = LocalConnectionStrategy(
         tool_runner=tool_runner,
         hook_runner=hr,
-        gemini_config=types.GeminiConfig(model_name=_MODEL_NAME.value),
+        gemini_config=types.GeminiConfig(
+            models=types.ModelConfig(
+                default=types.ModelEntry(name=_MODEL_NAME.value),
+            ),
+        ),
         system_instructions=_SYSTEM_INSTRUCTION.value,
         capabilities_config=types.CapabilitiesConfig(
             disabled_tools=(

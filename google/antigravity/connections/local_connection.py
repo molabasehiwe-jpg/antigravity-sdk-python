@@ -876,7 +876,9 @@ class LocalConnectionStrategy(connection.ConnectionStrategy):
 
     # Normalize str shorthand to GeminiConfig model.
     if isinstance(gemini_config, str):
-      self._gemini_config = types.GeminiConfig(model_name=gemini_config)
+      self._gemini_config = types.GeminiConfig(
+          models=types.ModelConfig(default=types.ModelEntry(name=gemini_config))
+      )
     else:
       self._gemini_config = gemini_config
     self._workspaces = workspaces
@@ -928,14 +930,20 @@ class LocalConnectionStrategy(connection.ConnectionStrategy):
     gemini_config_proto = None
     if self._gemini_config:
       gemini_config_proto = localharness_pb2.GeminiConfig(
-          model_name=self._gemini_config.model_name,
+          model_name=self._gemini_config.models.default.name,
       )
-      if self._gemini_config.api_key is not None:
-        gemini_config_proto.api_key = self._gemini_config.api_key
-      if self._gemini_config.thinking_level is not None:
-        gemini_config_proto.thinking_level = (
-            self._gemini_config.thinking_level.value
-        )
+      # Use per-model API key if set, otherwise fall back to shared key.
+      effective_api_key = (
+          self._gemini_config.models.default.api_key
+          or self._gemini_config.api_key
+      )
+      if effective_api_key is not None:
+        gemini_config_proto.api_key = effective_api_key
+      thinking_level = (
+          self._gemini_config.models.default.generation.thinking_level
+      )
+      if thinking_level is not None:
+        gemini_config_proto.thinking_level = thinking_level.value
 
     workspace_protos = []
     if self._workspaces:

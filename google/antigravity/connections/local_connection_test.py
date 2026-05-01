@@ -724,7 +724,9 @@ class LocalConnectionStrategyConfigTest(unittest.TestCase):
     strategy = self._make_strategy(
         gemini_config=types.GeminiConfig(
             api_key="test-key",
-            model_name="gemini-2.5-pro",
+            models=types.ModelConfig(
+                default=types.ModelEntry(name="gemini-2.5-pro"),
+            ),
         )
     )
     config = strategy._build_harness_config()
@@ -755,6 +757,14 @@ class LocalConnectionStrategyConfigTest(unittest.TestCase):
     strategy = self._make_strategy(gemini_config=types.GeminiConfig())
     config = strategy._build_harness_config()
     self.assertEqual(config.gemini_config.model_name, "gemini-3-flash-preview")
+
+  def test_gemini_config_string_shorthand(self):
+    """Verifies that a bare model name string creates a proper GeminiConfig."""
+    strategy = self._make_strategy(gemini_config="custom-model-name")
+    config = strategy._build_harness_config()
+    self.assertEqual(config.gemini_config.model_name, "custom-model-name")
+    # No API key set in shorthand path.
+    self.assertEqual(config.gemini_config.api_key, "")
 
   def test_system_instructions_string_shorthand(self):
     """Verifies that a plain string normalizes to AppendedSystemInstructions.
@@ -995,44 +1005,42 @@ class LocalConnectionStrategyConfigTest(unittest.TestCase):
     self.assertEqual(config.cascade_id, "resume-123")
 
   def test_gemini_config_thinking_level_set(self):
-    """Verifies that thinking_level on GeminiConfig maps to the proto field.
-
-    Why: The harness uses the proto's string field to configure the model's
-    thinking level. If the SDK doesn't set it, the user's setting is silently
-    ignored.
-    How: Set thinking_level to HIGH and assert the proto string value.
-    """
+    """Verifies that thinking_level on ModelEntry maps to the proto field."""
     strategy = self._make_strategy(
         gemini_config=types.GeminiConfig(
-            thinking_level=types.ThinkingLevel.HIGH,
+            models=types.ModelConfig(
+                default=types.ModelEntry(
+                    name=types.DEFAULT_MODEL,
+                    generation=types.GenerationConfig(
+                        thinking_level=types.ThinkingLevel.HIGH,
+                    ),
+                ),
+            ),
         )
     )
     config = strategy._build_harness_config()
     self.assertEqual(config.gemini_config.thinking_level, "high")
 
   def test_gemini_config_thinking_level_none_omitted(self):
-    """Verifies that thinking_level=None leaves the proto field at its default.
-
-    Why: An empty string tells the harness to use the model's default thinking
-    level. Setting it explicitly would override the harness default.
-    How: Create a GeminiConfig with defaults, build proto, assert the field
-    is the proto default empty string.
-    """
+    """Verifies that thinking_level=None leaves the proto field at its default."""
     strategy = self._make_strategy(gemini_config=types.GeminiConfig())
     config = strategy._build_harness_config()
     self.assertEqual(config.gemini_config.thinking_level, "")
 
   def test_gemini_config_thinking_level_all_values(self):
-    """Verifies all ThinkingLevel enum values produce correct proto strings.
-
-    Why: The proto accepts specific string values ("minimal", "low", "medium",
-    "high"). A mismatch would cause the harness to reject or ignore the value.
-    How: Iterate all ThinkingLevel members and assert each produces the
-    correct proto string.
-    """
+    """Verifies all ThinkingLevel enum values produce correct proto strings."""
     for level in types.ThinkingLevel:
       strategy = self._make_strategy(
-          gemini_config=types.GeminiConfig(thinking_level=level)
+          gemini_config=types.GeminiConfig(
+              models=types.ModelConfig(
+                  default=types.ModelEntry(
+                      name=types.DEFAULT_MODEL,
+                      generation=types.GenerationConfig(
+                          thinking_level=level,
+                      ),
+                  ),
+              ),
+          )
       )
       config = strategy._build_harness_config()
       self.assertEqual(
@@ -1041,6 +1049,35 @@ class LocalConnectionStrategyConfigTest(unittest.TestCase):
           f"ThinkingLevel.{level.name} should produce proto string"
           f" '{level.value}'",
       )
+
+  def test_per_model_api_key_takes_priority(self):
+    """Verifies that a per-model API key overrides the shared GeminiConfig key."""
+    strategy = self._make_strategy(
+        gemini_config=types.GeminiConfig(
+            api_key="shared-key",
+            models=types.ModelConfig(
+                default=types.ModelEntry(
+                    name=types.DEFAULT_MODEL,
+                    api_key="per-model-key",
+                ),
+            ),
+        )
+    )
+    config = strategy._build_harness_config()
+    self.assertEqual(config.gemini_config.api_key, "per-model-key")
+
+  def test_shared_api_key_used_when_per_model_is_none(self):
+    """Verifies that the shared GeminiConfig api_key is used as fallback."""
+    strategy = self._make_strategy(
+        gemini_config=types.GeminiConfig(
+            api_key="shared-key",
+            models=types.ModelConfig(
+                default=types.ModelEntry(name=types.DEFAULT_MODEL),
+            ),
+        )
+    )
+    config = strategy._build_harness_config()
+    self.assertEqual(config.gemini_config.api_key, "shared-key")
 
 
 class LocalConnectionStrategyApiKeyTest(unittest.IsolatedAsyncioTestCase):
