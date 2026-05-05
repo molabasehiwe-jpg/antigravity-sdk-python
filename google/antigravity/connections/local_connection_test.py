@@ -116,6 +116,116 @@ class LocalConnectionTest(unittest.IsolatedAsyncioTestCase):
     self.assertEqual(step.source, types.StepSource.MODEL)
     self.assertEqual(step.target, "TARGET_USER")
 
+  def test_local_connection_step_from_dict_thinking(self):
+    """Tests that thinking field is correctly populated from step dict."""
+    step_dict = {
+        "step_index": 1,
+        "text": "",
+        "thinking": "Let me analyze this step by step.",
+        "state": "STATE_DONE",
+        "source": "SOURCE_MODEL",
+    }
+    step = local_connection.LocalConnectionStep.from_dict(step_dict)
+    self.assertEqual(step.thinking, "Let me analyze this step by step.")
+    self.assertEqual(step.content, "")
+
+  def test_local_connection_step_from_dict_thinking_empty_by_default(self):
+    """Tests that thinking defaults to empty string when not present."""
+    step_dict = {
+        "step_index": 1,
+        "text": "Hello",
+        "state": "STATE_DONE",
+        "source": "SOURCE_MODEL",
+    }
+    step = local_connection.LocalConnectionStep.from_dict(step_dict)
+    self.assertEqual(step.thinking, "")
+    self.assertEqual(step.content, "Hello")
+
+  async def test_receive_steps_thinking_populated(self):
+    """Tests that thinking field flows from proto through to SDK Step."""
+    conn = local_connection.LocalConnection(
+        process=self.mock_process,
+        ws=self.mock_ws,
+        tool_runner=self.tool_runner,
+    )
+
+    event = localharness_pb2.OutputEvent(
+        step_update=localharness_pb2.StepUpdate(
+            step_index=1,
+            text="",
+            thinking="Internal reasoning about the problem.",
+            state=localharness_pb2.StepUpdate.STATE_DONE,
+            source=localharness_pb2.StepUpdate.SOURCE_MODEL,
+        )
+    )
+
+    await self.mock_ws.put_event(event)
+    await self.mock_ws.close()
+    conn._is_idle.clear()
+
+    steps = []
+    async for step in conn.receive_steps():
+      steps.append(step)
+
+    self.assertEqual(len(steps), 1)
+    self.assertEqual(steps[0].thinking, "Internal reasoning about the problem.")
+    self.assertEqual(steps[0].content, "")
+
+  async def test_receive_steps_thinking_and_text_independent(self):
+    """Tests that thinking and text are independent, non-exclusive fields.
+
+    This is the key behavioral invariant: the translator must populate both
+    fields from the same model response. A regression to mutually exclusive
+    branches would zero out one of the two.
+    """
+    conn = local_connection.LocalConnection(
+        process=self.mock_process,
+        ws=self.mock_ws,
+        tool_runner=self.tool_runner,
+    )
+
+    event = localharness_pb2.OutputEvent(
+        step_update=localharness_pb2.StepUpdate(
+            step_index=1,
+            text="Here is my answer.",
+            thinking="Let me reason through this carefully.",
+            state=localharness_pb2.StepUpdate.STATE_DONE,
+            source=localharness_pb2.StepUpdate.SOURCE_MODEL,
+        )
+    )
+
+    await self.mock_ws.put_event(event)
+    await self.mock_ws.close()
+    conn._is_idle.clear()
+
+    steps = []
+    async for step in conn.receive_steps():
+      steps.append(step)
+
+    self.assertEqual(len(steps), 1)
+    self.assertEqual(steps[0].content, "Here is my answer.")
+    self.assertEqual(steps[0].thinking, "Let me reason through this carefully.")
+
+  async def test_thinking_only_step_is_target_user_not_complete(self):
+    """Tests that thinking-only steps are TARGET_USER but not is_complete_response.
+
+    Thinking is user-visible output (TARGET_USER), but a step with only
+    thinking and no text must not be flagged as a complete response —
+    otherwise the SDK would prematurely treat the turn as finished.
+    """
+    step_dict = {
+        "step_index": 1,
+        "text": "",
+        "thinking": "Internal reasoning about the problem.",
+        "state": "STATE_DONE",
+        "source": "SOURCE_MODEL",
+        "target": "TARGET_USER",
+    }
+    step = local_connection.LocalConnectionStep.from_dict(step_dict)
+    self.assertEqual(step.thinking, "Internal reasoning about the problem.")
+    self.assertEqual(step.target, "TARGET_USER")
+    self.assertFalse(step.is_complete_response)
+
   async def test_turn_hook_deny(self):
     hr = hook_runner.HookRunner()
 
