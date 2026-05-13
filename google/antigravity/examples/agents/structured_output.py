@@ -51,7 +51,6 @@ async def main() -> None:
   logging.basicConfig(level=logging.INFO)
 
   config = LocalAgentConfig(
-      system_instructions="You are a helpful assistant.",
       tools=[fetch_unstructured_meeting_notes],
       response_schema=MeetingSummary,
   )

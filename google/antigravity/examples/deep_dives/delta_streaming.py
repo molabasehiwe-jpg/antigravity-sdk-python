@@ -56,9 +56,7 @@ async def run_prompt(agent: Agent, prompt: str) -> None:
 
 async def run():
   """Runs the streaming content example."""
-  config = LocalAgentConfig(
-      system_instructions="You are a helpful assistant.",
-  )
+  config = LocalAgentConfig()
 
   logging.info("Starting agent...")
   async with Agent(config) as agent:

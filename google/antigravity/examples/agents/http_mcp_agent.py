@@ -100,7 +100,6 @@ async def main() -> None:
     print("Creating agent...")
     config = LocalAgentConfig(
         system_instructions=(
-            "You are a helpful assistant. "
             "You have access to a pirate math server, use it to multiply "
             "numbers if asked."
         ),

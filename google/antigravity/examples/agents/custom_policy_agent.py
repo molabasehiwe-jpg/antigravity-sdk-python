@@ -41,7 +41,6 @@ async def main():
 
   print("Creating agent...")
   config = LocalAgentConfig(
-      system_instructions="You are a helpful assistant.",
       policies=[example_policies.BLOCK_RM_POLICY],
       capabilities=types.CapabilitiesConfig(),
   )

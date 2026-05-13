@@ -39,7 +39,6 @@ async def main():
   # --- Session 1: establish context ---
   print("\n=== Session 1: establishing context ===")
   config = LocalAgentConfig(
-      system_instructions="You are a helpful assistant.",
       save_dir=save_dir,
   )
   async with Agent(config) as agent:
@@ -56,7 +55,6 @@ async def main():
   # --- Session 2: resume and verify recall ---
   print("=== Session 2: resuming and verifying recall ===")
   config = LocalAgentConfig(
-      system_instructions="You are a helpful assistant.",
       conversation_id=conversation_id,
       save_dir=save_dir,
   )

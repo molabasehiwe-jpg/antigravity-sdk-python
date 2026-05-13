@@ -51,13 +51,11 @@ import sys
 from google.antigravity import Agent, AgentConfig
 
 async def main():
-    config = AgentConfig(
-        system_instructions="You are a helpful assistant.",
-    )
+    config = AgentConfig()
     async with Agent(config) as agent:
         # Returns instantly — does not block
         response = await agent.chat("Write a short poem about space.")
-        
+
         async for token in response:
             sys.stdout.write(token)
             sys.stdout.flush()
@@ -90,7 +88,6 @@ from google.antigravity import Agent, LocalAgentConfig, CapabilitiesConfig
 from google.antigravity.utils.interactive import run_interactive_loop
 
 config = LocalAgentConfig(
-    system_instructions="You are a helpful assistant.",
     api_key="GEMINI_API_KEY",
     capabilities=CapabilitiesConfig(),
 )
@@ -183,7 +180,6 @@ def get_weather(city: str) -> str:
     return f"It's sunny in {city}."
 
 config = LocalAgentConfig(
-    system_instructions="You are a helpful assistant.",
     tools=[get_weather],
 )
 async with Agent(config) as agent:
@@ -199,7 +195,6 @@ their tools to the agent:
 from google.antigravity import Agent, LocalAgentConfig
 
 config = LocalAgentConfig(
-    system_instructions="You are a helpful assistant.",
     mcp_servers=[{"type": "stdio", "command": "npx", "args": ["my-mcp-server"]}],
 )
 async with Agent(config) as agent:
@@ -222,7 +217,6 @@ policies = [
 ]
 
 config = LocalAgentConfig(
-    system_instructions="You are a helpful assistant.",
     capabilities=CapabilitiesConfig(),
     policies=policies,
 )
@@ -244,7 +238,6 @@ async def check_status(ctx):
     await ctx.send("Check the deployment status.")
 
 config = LocalAgentConfig(
-    system_instructions="You are a helpful assistant.",
     triggers=[every(60, check_status)],
 )
 async with Agent(config) as agent:

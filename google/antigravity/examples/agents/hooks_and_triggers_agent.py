@@ -49,7 +49,6 @@ async def main():
 
   print("Creating agent...")
   config = LocalAgentConfig(
-      system_instructions="You are a helpful assistant.",
       hooks=[my_hook],
       triggers=[my_trigger],
   )

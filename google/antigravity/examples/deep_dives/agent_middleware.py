@@ -202,9 +202,8 @@ async def main() -> None:
   agent = Agent(
       LocalAgentConfig(
           system_instructions=(
-              "You are a helpful assistant with access to user lookup,"
-              " notification, and diagnostic tools. Use them as needed."
-              " Keep responses under 2 sentences."
+              "You have access to user lookup, notification, and diagnostic"
+              " tools. Use them as needed. Keep responses under 2 sentences."
           ),
           tools=[lookup_user, send_notification, send_to_unknown],
           hooks=[

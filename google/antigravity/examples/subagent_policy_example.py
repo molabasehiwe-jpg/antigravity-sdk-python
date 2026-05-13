@@ -45,11 +45,10 @@ async def main():
 
   config = local_config.LocalAgentConfig(
       system_instructions=(
-          "You are a helpful assistant. If you need to read a file, you MUST"
-          " invoke a subagent to do it for you. Do not read it yourself. Always"
-          " instruct your subagents that if they encounter a policy denial when"
-          " calling a tool, they should immediately stop and report the"
-          " failure."
+          "If you need to read a file, you MUST invoke a subagent to do it for"
+          " you. Do not read it yourself. Always instruct your subagents that"
+          " if they encounter a policy denial when calling a tool, they"
+          " should immediately stop and report the failure."
       ),
       policies=[deny_view_file],
       capabilities=types.CapabilitiesConfig(

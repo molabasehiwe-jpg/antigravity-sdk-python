@@ -58,9 +58,6 @@ async def main():
 
   print("Creating agent...")
   config = LocalAgentConfig(
-      system_instructions=(
-          "You are a helpful assistant. Use your tools when needed."
-      ),
       tools=[read_file_upside_down],
       mcp_servers=mcp_servers,
       capabilities=types.CapabilitiesConfig(),

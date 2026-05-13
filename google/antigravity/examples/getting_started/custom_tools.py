@@ -81,9 +81,9 @@ async def main() -> None:
   config = local.LocalAgentConfig(
       tools=[lookup_fruit_sku, record_fruit],
       system_instructions=(
-          "You are a helpful assistant. You keep track of fruit inventory. "
-          "To record fruits, you MUST first look up the fruit's SKU using "
-          "lookup_fruit_sku, and then use that SKU with record_fruit."
+          "You keep track of fruit inventory. To record fruits, you MUST"
+          " first look up the fruit's SKU using lookup_fruit_sku, and then"
+          " use that SKU with record_fruit."
       ),
       policies=[
           # Deny everything by default so only the tools below are allowed
