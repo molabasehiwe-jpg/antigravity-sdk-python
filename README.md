@@ -11,6 +11,13 @@ your agent *does* rather than how it runs.
 pip install google-antigravity
 ```
 
+> [!IMPORTANT]
+> The Google Antigravity SDK relies on a compiled runtime binary that is
+> included in the platform-specific wheels published to
+> [PyPI](https://pypi.org/project/google-antigravity/). **Cloning this
+> repository alone is not sufficient to run the SDK.** Always install from
+> PyPI with `pip install google-antigravity` to obtain the binary.
+
 ## Quickstart
 
 Get started by running one of the [`examples/`](examples/), such as the
