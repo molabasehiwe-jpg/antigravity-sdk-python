@@ -16,8 +16,13 @@
 
 import logging
 import os
+import pathlib
 import tempfile
 from typing import Any
+
+DEFAULT_APP_DATA_DIR = (
+    pathlib.Path("~/.gemini/antigravity").expanduser().resolve()
+)
 
 import pydantic
 
@@ -93,7 +98,12 @@ class LocalAgentConfig(connection.AgentConfig):
     Users who want truly unrestricted access should set ``workspaces=[]``.
     """
     if self.workspaces:
-      self.policies = policy.workspace_only(self.workspaces) + self.policies
+      # Automatically include the app data directory in the workspace allowlist
+      app_data_path = self.app_data_dir or DEFAULT_APP_DATA_DIR
+      resolved_app_data_dir = pathlib.Path(app_data_path).expanduser().resolve()
+      allowed_paths = [*self.workspaces, str(resolved_app_data_dir)]
+
+      self.policies = policy.workspace_only(allowed_paths) + self.policies
     return self
 
   def create_strategy(

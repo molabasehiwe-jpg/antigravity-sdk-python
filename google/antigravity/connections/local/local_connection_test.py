@@ -20,8 +20,10 @@ import importlib
 import io
 import json
 import os
+import pathlib
 import struct
 import subprocess
+import tempfile
 import unittest
 from unittest import mock
 
@@ -3442,6 +3444,98 @@ class LocalAgentConfigTest(unittest.TestCase):
           system_instructions="test",
           app_data_dir="relative/path",
       )
+
+
+class LocalAgentConfigWorkspaceTest(
+    parameterized.TestCase, unittest.IsolatedAsyncioTestCase
+):
+  """Tests for workspace scoping policy with app_data_dir inclusion."""
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="allowed_in_workspace",
+          app_data_dir_factory=lambda temp_dir: str(
+              temp_dir / "my_custom_app_data"
+          ),
+          path_factory=lambda temp_dir: str(temp_dir / "my_workspace/file.txt"),
+          expected_allowed=True,
+          msg="Target inside workspace should be allowed",
+      ),
+      dict(
+          testcase_name="allowed_in_custom_app_data_dir",
+          app_data_dir_factory=lambda temp_dir: str(
+              temp_dir / "my_custom_app_data"
+          ),
+          path_factory=lambda temp_dir: str(
+              temp_dir / "my_custom_app_data/brain/123/artifact.md"
+          ),
+          expected_allowed=True,
+          msg="Target inside custom app_data_dir should be allowed",
+      ),
+      dict(
+          testcase_name="allowed_in_default_app_data_dir",
+          app_data_dir_factory=lambda _: None,
+          path_factory=lambda temp_dir: str(
+              temp_dir / "my_default_app_data/brain/123/artifact.md"
+          ),
+          expected_allowed=True,
+          msg=(
+              "Target inside default app_data_dir should be allowed when config"
+              " is None"
+          ),
+      ),
+      dict(
+          testcase_name="denied_outside_both",
+          app_data_dir_factory=lambda temp_dir: str(
+              temp_dir / "my_custom_app_data"
+          ),
+          path_factory=lambda temp_dir: str(temp_dir / "outside/passwd"),
+          expected_allowed=False,
+          msg="Target outside both workspace and app_data_dir should be denied",
+      ),
+  )
+  async def test_workspace_policy_scenarios(
+      self,
+      app_data_dir_factory,
+      path_factory,
+      expected_allowed: bool,
+      msg: str,
+  ):
+    # Create dynamic, hermetic temporary directory
+    temp_dir_path = pathlib.Path(
+        self.enter_context(tempfile.TemporaryDirectory())
+    )
+
+    workspace_dir = temp_dir_path / "my_workspace"
+    default_app_data_dir = temp_dir_path / "my_default_app_data"
+
+    # Mock the module-level constant to use our hermetic default app data dir
+    with mock.patch.object(
+        local_connection_config,
+        "DEFAULT_APP_DATA_DIR",
+        str(default_app_data_dir),
+    ):
+      app_data_dir = app_data_dir_factory(temp_dir_path)
+      path = path_factory(temp_dir_path)
+
+      config = local_connection_config.LocalAgentConfig(
+          system_instructions="test",
+          workspaces=[str(workspace_dir)],
+          app_data_dir=app_data_dir,
+      )
+
+      # workspace_only policies are the first 3
+      policies = config.policies[:3]
+      hook = policy.enforce(policies)
+      ctx = hooks_base.HookContext()
+
+      tc = types.ToolCall(
+          name="view_file",
+          args={"path": path},
+          canonical_path=path,
+      )
+      res = await hook.run(ctx, tc)
+      self.assertEqual(res.allow, expected_allowed, msg=msg)
 
 
 class LocalConnectionBuiltinToolHooksTest(unittest.IsolatedAsyncioTestCase):
