@@ -1,0 +1,7 @@
+your_android_sdk_folder/             <-- (Step 2: You create this & name it whatever you want)
+└── cmdline-tools/                   <-- (Step 2: Put the unzipped folder here)
+    └── latest/                      <-- (Step 3: You manually create this new folder)
+        ├── bin/                     <-- (Step 4: Move this inside 'latest')
+        ├── lib/                     <-- (Step 4: Move this inside 'latest')
+        ├── NOTICE.txt               <-- (Step 4: Move this inside 'latest')
+        └── source.properties        <-- (Step 4: Move this inside 'latest')
