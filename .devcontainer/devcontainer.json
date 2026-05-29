@@ -1,0 +1,72 @@
+{
+  "name": "Node.js + Python + Flutter Full-Stack Development",
+  "image": "mcr.microsoft.com/devcontainers/python:3.11-bullseye",
+  "features": {
+    "ghcr.io/devcontainers/features/node:latest": {
+      "version": "24"
+    },
+    "ghcr.io/devcontainers/features/git:latest": {},
+    "ghcr.io/devcontainers/features/github-cli:latest": {}
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "dbaeumer.vscode-eslint",
+        "dart-code.flutter",
+        "dart-code.dart-code",
+        "ms-vscode.makefile-tools",
+        "ms-vscode-remote.remote-containers"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.linting.enabled": true,
+        "python.linting.pylintEnabled": true,
+        "editor.formatOnSave": true,
+        "[python]": {
+          "editor.defaultFormatter": "ms-python.python",
+          "editor.formatOnSave": true
+        },
+        "[javascript]": {
+          "editor.defaultFormatter": "esbenp.prettier-vscode"
+        },
+        "eslint.validate": [
+          "javascript",
+          "javascriptreact",
+          "typescript",
+          "typescriptreact"
+        ]
+      }
+    }
+  },
+  "forwardPorts": [3000, 5000, 8000, 8080],
+  "portsAttributes": {
+    "3000": {
+      "label": "Node.js Development Server",
+      "onAutoForward": "notify"
+    },
+    "5000": {
+      "label": "Flask/Python API Server",
+      "onAutoForward": "notify"
+    },
+    "8000": {
+      "label": "Python Development Server",
+      "onAutoForward": "notify"
+    },
+    "8080": {
+      "label": "Flutter Web Server",
+      "onAutoForward": "notify"
+    }
+  },
+  "postCreateCommand": "pip install --upgrade pip && pip install -r requirements.txt 2>/dev/null || true && npm install 2>/dev/null || true",
+  "remoteEnv": {
+    "NODE_ENV": "development",
+    "PYTHONUNBUFFERED": "1"
+  },
+  "mounts": [
+    "source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh,readonly"
+  ],
+  "remoteUser": "vscode",
+  "workspaceFolder": "/workspaces/${localEnv:RepositoryName}"
+}
